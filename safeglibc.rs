@@ -135,12 +135,14 @@ fn main() {
 
     use std::hint::black_box;
     let memset_stub = black_box(&[0x4c, 0x89, 0xf7, 0x31, 0xf6, 0x48, 0x89, 0xda, 0xff, 0x15]);
-    let malloc_stub = &[0x48, 0x89, 0xd7, 0xff, 0x25];
-    let free_stub = &[0x4c, 0x89, 0xf7, 0xff, 0x15];
+    let malloc_stub = black_box(&[0x48, 0x89, 0xd7, 0xff, 0x25]);
+    let free_stub = black_box(&[0x4c, 0x89, 0xf7, 0xff, 0x15]);
     let mmap64_stub = black_box(&[0x45, 0x89, 0xf0, 0x45, 0x31, 0xc9, 0xff, 0x15]);
     let munmap_stub = black_box(&[0x4c, 0x89, 0xef, 0x4c, 0x89, 0xe6, 0xff, 0x15]);
-
-    let safe_memset = match safely_get_fnaddr_from_plt::<fn(usize, i32, usize)>(memset_stub) {
+	let syscall_stub = black_box(&[0xbf, 0x4c, 0x01, 0x00, 0x00, 0x41, 0xb8, 0xff,
+		0x0f, 0x00, 0x00, 0x31, 0xc0, 0xff, 0x15]);
+	
+    let safe_memset = match safely_get_fnaddr_from_got::<fn(usize, i32, usize)>(memset_stub) {
         Some(val) => val,
         None => {
             println!("Could not find memset");
@@ -148,7 +150,7 @@ fn main() {
         }
     };
 
-    let safe_malloc = match safely_get_fnaddr_from_plt::<fn(usize) -> usize>(malloc_stub) {
+    let safe_malloc = match safely_get_fnaddr_from_got::<fn(usize) -> usize>(malloc_stub) {
         Some(val) => val,
         None => {
             println!("Could not find malloc");
@@ -156,7 +158,7 @@ fn main() {
         }
     };
 
-    let safe_free = match safely_get_fnaddr_from_plt::<fn(usize) -> ()>(free_stub) {
+    let safe_free = match safely_get_fnaddr_from_got::<fn(usize) -> ()>(free_stub) {
         Some(val) => val,
         None => {
             println!("Could not find free");
@@ -164,9 +166,7 @@ fn main() {
         }
     };
 
-    let safe_mmap64 = match safely_get_fnaddr_from_plt::<
-        fn(usize, usize, i32, i32, i32, isize) -> isize,
-    >(mmap64_stub)
+    let safe_mmap64 = match safely_get_fnaddr_from_got::<fn(usize, usize, i32, i32, i32, isize) -> isize>(mmap64_stub)
     {
         Some(val) => val,
         None => {
@@ -175,13 +175,27 @@ fn main() {
         }
     };
 
-    let safe_munmap = match safely_get_fnaddr_from_plt::<fn(usize, usize) -> i32>(munmap_stub) {
+    let safe_munmap = match safely_get_fnaddr_from_got::<fn(usize, usize) -> i32>(munmap_stub) {
         Some(val) => val,
         None => {
             println!("Could not find munmap");
             return;
         }
     };
+
+    let safe_syscall = match safely_get_fnaddr_from_got::<fn()->()>(syscall_stub) {
+        Some(val) => val,
+        None => {
+            println!("Could not find munmap");
+            return;
+        }
+    };
+
+	let strv : &[u8] = "Testing syscall here".as_bytes();
+	let pstrv : usize = transmute::<&[u8], usize>(strv);
+	
+	transmute::<fn()->(), fn(u32, u32, usize, u32) -> i32>(safe_syscall)
+		(1_u32, 1_u32, pstrv, strv.len() as u32);
 
     let pheapmem = safe_malloc(64);
     let heapslice = transmute::<usize, &mut [u8; 64]>(pheapmem);
@@ -221,7 +235,7 @@ fn main() {
             0x48, 0x83, 0xec, 0x20, //sub rsp, qword 20h
             0xb8, 0x1, 0x00, 0x00, 0x00, //mov rax, 1
             0xbf, 0x01, 0x00, 0x00, 0x00, //mov rdi, 1
-            0x48, 0x8d, 0x35, 0xf, 0x00, 0x00, 0x00, //lea rsi, [strlabel]
+            0x48, 0x8d, 0x35, 0xd, 0x00, 0x00, 0x00, //lea rsi, [strlabel]
             0xba, 0x1f, 0x00, 0x00, 0x00, //mov rdx, 31
             0xf, 0x05, //syscall (write string at strlabel)
             0x48, 0x89, 0xec, //mov rsp, rbp
@@ -229,7 +243,7 @@ fn main() {
             0x5d, //pop qword rbp
             0xc3, //ret
             //strlabel:
-            0xeb, 0xfe, 0x52, 0x75, 0x73, 0x74, 0x20, 0x69, 0x73, 0x20, 0x61, 0x20, 0x6e, 0x65,
+            0x52, 0x75, 0x73, 0x74, 0x20, 0x69, 0x73, 0x20, 0x61, 0x20, 0x6e, 0x65,
             0x77, 0x20, 0x74, 0x79, 0x70, 0x65, 0x20, 0x6f, 0x66, 0x20, 0x6c, 0x61, 0x6e, 0x67,
             0x75, 0x61, 0x67, 0x65, 0xa
         ];
