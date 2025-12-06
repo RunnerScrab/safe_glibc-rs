@@ -8,45 +8,48 @@ section .text
 	push	r13
 	push	r14
 	push	r15
+	push	rbp
 	mov rbp, rsp
 
 
-	lea	rdi, [.string]
+	lea		rdi, [.string]
 	call	.strlen
-	mov	rsi, rax
-	lea	rdi, [.string]	
+	mov		rsi, rax
+	lea		rdi, [.string]	
 	call	.printrgbstring
 
 	; Print the ANSI reset code so we leave the user's
 	; terminal as we found it
 	call	.printansireset
 	call	.printnl
-	mov	rsp, rbp
-	pop	r15
-	pop	r14
-	pop	r13
-	pop	r12
-	pop	rbx
+	mov		rax, 0FEEDFACEDEADBEEFh
+	mov		rsp, rbp
+	pop		rbp
+	pop		r15
+	pop		r14
+	pop		r13
+	pop		r12
+	pop		rbx
 	ret
 
 ; _start being after main allows this to both run as a standalone
 ; program and to be copied into and run from executable memory
 _start: 
 	call 	._main
-	mov	rax, 60
-	mov	rdi, 0
+	mov		rax, 60
+	mov		rdi, 0
 	syscall
 .strlen:	; rdi str, rax ret
 	push	rbx
 	
-	xor	rax, rax
-	xor	rbx, rbx
-	lea	rcx, [rdi]
+	xor		rax, rax
+	xor		rbx, rbx
+	lea		rcx, [rdi]
 	._strlenloop:
-		mov	bl, [rcx]		
-		add	rcx, 1
-		add	rax, 1
-		cmp	bl, 0
+		mov		bl, [rcx]		
+		add		rcx, 1
+		add		rax, 1
+		cmp		bl, 0
 		jne	._strlenloop
 	sub	rax, 1
 	

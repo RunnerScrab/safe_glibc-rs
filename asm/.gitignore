@@ -1,4 +1,6 @@
 exportbin
+sc
 *.o
 *.txt
+*.bin
 

@@ -12,6 +12,7 @@ sc.bin.txt: exportbin sc.bin
 
 sc.bin: sc.s
 	nasm -f bin sc.s -o sc.bin $(NASMFLAGS)
+	cp sc.bin ../sc.bin
 
 exportbin: exportbin.c
 	$(CC) exportbin.c -o exportbin -O3
