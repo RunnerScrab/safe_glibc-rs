@@ -17,7 +17,8 @@ section .text
 	lea	rdi, [.string]	
 	call	.printrgbstring
 
-
+	; Print the ANSI reset code so we leave the user's
+	; terminal as we found it
 	call	.printansireset
 	call	.printnl
 	mov	rsp, rbp
@@ -27,7 +28,10 @@ section .text
 	pop	r12
 	pop	rbx
 	ret
-_start:
+
+; _start being after main allows this to both run as a standalone
+; program and to be copied into and run from executable memory
+_start: 
 	call 	._main
 	mov	rax, 60
 	mov	rdi, 0
@@ -59,7 +63,7 @@ _start:
 	xor	r10, r10
 	xor	r13, r13
 	xor	r12, r12
-	mov	r14, 80
+	mov	r14, 20		;Parts the color wheel is divided into
 	cmp	rsi, r14 
 	jge	._loop; rsi >= 80
 ._setmaxtostrlen:
@@ -71,12 +75,14 @@ _start:
 	
 	mov	r10, rax ; red
 	and	r10, 255
+
 	mov	r11, rax ; green
 	shr	r11, 8
 	and	r11, 255
-	mov	rbx, rax ; blue
-	shr	rbx, 16
-	and	rbx, 255
+
+	mov	rcx, rax ; blue
+	shr	rcx, 16
+	and	rcx, 255
 
 	lea	rax, [r8]
 	add	rax, r12
@@ -84,14 +90,12 @@ _start:
 	mov	dil, byte [rax]
 	mov	rsi, r10
 	mov	rdx, r11
-	mov	rcx, rbx
+
 	push	r8
 	push	r9
 	push	r10
 	push	r11
-	push	rcx
 	call	.printcolorchar	
-	pop	rcx
 	pop	r11
 	pop	r10
 	pop	r9
@@ -102,9 +106,9 @@ _start:
 	jge	._loopend
 
 	add	r13, 1
-	cmp	r13, 81
+	cmp	r13, r14 
 	jl	._loop
-	xor	ecx, ecx
+	xor	r13, r13
 	jmp	._loop
 ._loopend:
 	pop	r14
@@ -183,7 +187,7 @@ _start:
 	mov	rsp, rbp
 	pop	rbp
 	ret
-.printchar:; rdi	char
+.printchar:; rdi char
 	push	rbp
 	mov	rbp, rsp
 	sub	rsp, 8
@@ -210,19 +214,10 @@ _start:
 	pop	rbp
 	ret
 .printnl:
-	push	rbp
-	mov	rbp, rsp
-	sub	rsp, 8
-
-	mov 	rax, 1
-	mov 	rdi, 1
-	mov 	rdx, 1
-	mov 	[rbp - 8], byte 0ah
-	lea 	rsi, [rbp - 8]
-	syscall
-	mov	rsp, rbp
-	pop	rbp
-	ret	
+	mov	dil, 0ah
+	call	.printchar
+	ret
+; Performs floating-point modulus
 .flmod:
 	movaps	xmm2, xmm0
 	divss	xmm2, xmm1
@@ -232,6 +227,7 @@ _start:
 	mulss	xmm1, xmm2
 	subss	xmm0, xmm1
 	ret
+; Map a channel of hsv to R, G, or B
 .hsvf:	; xmm0 return, xmm0 n, xmm1 h
 	addss	xmm0, xmm1
 	mov	eax, 40c00000h
@@ -277,6 +273,8 @@ _start:
 	ja	._label3
 	jmp	._label6
 
+; Converts a hue-saturation-value angle into an rgb value
+; This is used to rotate through the color wheel
 .hsv_to_rgb: ; eax return, edi max_steps, esi step
 	push	rbp
 	mov	rbp, rsp
@@ -284,6 +282,9 @@ _start:
 	mov	[rbp - 1ch], edi ; max_steps_local, max_steps
 	mov	[rbp - 20h], esi ;step_local, step
 
+	mov	eax, 43b40000h	; 360.f
+	mov	edi, 42700000h	; 60.f
+	mov	esi, 40a00000h	; 5.f
 
 	pxor	xmm0, xmm0
 	cvtsi2ss	xmm0, [rbp - 20h]
@@ -294,13 +295,11 @@ _start:
 	movaps	xmm1, xmm0
 	divss	xmm1, xmm2
 
-	mov	eax, 43b40000h	; 360.f
 	movd	xmm0, eax
 
 	mulss	xmm0, xmm1
 	movss	[rbp - 14h], xmm0 ; angle
 	
-	mov	edi, 42700000h	; 60.f
 	movd	xmm1, edi
 
 	divss	xmm0, xmm1
@@ -310,54 +309,53 @@ _start:
 	movss	xmm0, [rbp - 10h]
 	movaps	xmm1, xmm0
 
-	mov	esi, 40a00000h	; 5.f
 	movd	xmm0, esi
 	call	.hsvf
-
 	
+	mov	ecx, 40400000h	; 3.f
+
 	cvttss2si	eax, xmm0
 	movzx	eax, al
-
 	or	[rbp - 0ch], eax ; first or
 	
 	movss	xmm0, [rbp - 10h]
 	
 	movaps	xmm1, xmm0
-	mov	eax, 40400000h	; 3.f
 	
-	movd	xmm0, eax
+	movd	xmm0, ecx
 	call	.hsvf
-	cvttss2si	eax, xmm0
-	movzx	eax, al
+	cvttss2si	edi, xmm0
+	movzx	edx, dil 
 	
-	shl	eax, 8 
-	or	[rbp - 0ch], eax ; second or
+	mov	eax, 3f800000h ; 1.f
+	
+	shl	edx, 8 
+	or	[rbp - 0ch], edx ; second or
 
 	movss	xmm0, [rbp - 10h]
 	movaps	xmm1, xmm0
-	mov	eax, 3f800000h
 	movd	xmm0, eax
 	call	.hsvf
 	
-	cvttss2si	eax, xmm0
-	movzx	eax, al
-
-	shl	eax, 16 
-	or	[rbp - 0ch], eax ; third or
+	cvttss2si	esi, xmm0
+	movzx	ecx, sil
+	shl	ecx, 16 
+	or	[rbp - 0ch], ecx ; third or
 	mov	eax, [rbp - 0ch]
-	leave
+
+	mov	rsp, rbp	
+	pop	rbp
 	ret
 
+; A naive itoa that is small and easy to write but slow
 .itoa:;	ret rax, num edi, rsi poutbuf
-	push	rbx
-
-	mov	ebx, 10
+	mov	r8, 10
 	mov	eax, edi ;eax is now the number
 ._itoaloop:
 	; eax = eax / src
 	; edx = eax % src
 	xor	edx, edx
-	div	ebx
+	div	r8
 	mov	ecx, eax
 	add	edx, 48
 	mov	[rsi], byte dl
@@ -367,8 +365,6 @@ _start:
 	
 	mov	rax, rsi
 	add	rax, 1h
-	
-	pop	rbx
 	ret
 ; 5ch 78h 31h 62h 5Bh 33h 38h 3Bh 32h 3Bh _ 3Bh _ 3Bh _ 6dh
 .ansicode1: db 1bh, 5bh, 33h, 38h, 3bh, 32h, 3bh
