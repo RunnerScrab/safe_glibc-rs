@@ -92,7 +92,8 @@ _start:
 	xor r10, r10
 	xor r12, r12
 	xor r13, r13
-
+	xor r15, r15
+	
 	mov r14, 36 ; Parts the color wheel is divided into
 	mov r13, 36 ; starting color wheel angle step
 
@@ -124,7 +125,7 @@ _start:
 	mov rsi, r10
 	mov rdx, r11
 
-	cmp r15, 0ah
+	cmp r15b, 0ah
 	je ._nonprintingchar
 
 ._printablechar:
@@ -137,11 +138,15 @@ _start:
 	pop r10
 	pop r9
 	pop r8
-	jmp ._loopprologue
+	jmp ._loopepilogue
 ._nonprintingchar:
+	
+	push r13
+	push r14
 	call .printchar
-
-._loopprologue:
+	pop r14
+	pop r13
+._loopepilogue:
 	add r12, 1 ; Increment index into string
 
 	cmp r12, r9 ; If we have reached the end of the buffer, exit loop
