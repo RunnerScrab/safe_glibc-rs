@@ -1,12 +1,13 @@
 [BITS 64]
 default rel
-;global	_start
+global	_start
 section .text
-_start:
-	push rdx
-	push rdi
-	push rbp
-	push rbx
+._main:
+	push	rbx
+	push	r12
+	push	r13
+	push	r14
+	push	r15
 	mov rbp, rsp
 
 
@@ -20,14 +21,20 @@ _start:
 	call	.printansireset
 	call	.printnl
 	mov	rsp, rbp
-	pop 	rbx
-	pop 	rbp
-	pop	rdi
-	pop	rdx
+	pop	r15
+	pop	r14
+	pop	r13
+	pop	r12
+	pop	rbx
 	ret
+_start:
+	call 	._main
+	mov	rax, 60
+	mov	rdi, 0
+	syscall
 .strlen:	; rdi str, rax ret
 	push	rbx
-	push	rcx
+	
 	xor	rax, rax
 	xor	rbx, rbx
 	lea	rcx, [rdi]
@@ -38,16 +45,10 @@ _start:
 		cmp	bl, 0
 		jne	._strlenloop
 	sub	rax, 1
-	pop	rcx		
+	
 	pop	rbx
 	ret
 .printrgbstring: ; rdi str, rsi len
-	push	rcx
-	push	rax
-	push	r8
-	push	r9
-	push	r10	
-	push	r11
 	push	r12
 	push	r13
 	push	r14
@@ -84,7 +85,17 @@ _start:
 	mov	rsi, r10
 	mov	rdx, r11
 	mov	rcx, rbx
+	push	r8
+	push	r9
+	push	r10
+	push	r11
+	push	rcx
 	call	.printcolorchar	
+	pop	rcx
+	pop	r11
+	pop	r10
+	pop	r9
+	pop	r8
 	
 	add	r12, 1
 	cmp	r12, r9
@@ -99,88 +110,65 @@ _start:
 	pop	r14
 	pop	r13
 	pop	r12
-	pop	r11
-	pop	r10
-	pop	r9
-	pop	r8
-	pop	rax
-	pop	rcx
 	ret
 
 .printansireset:
-	push	rdi
-	push	rsi
-
 	lea	rdi, [.ansireset]
 	mov	rsi, 4
 	call	.printstr		
-	
-	pop	rsi
-	pop	rdi
 	ret
 .printcolorchar: ; rdi - char, rsi r, rdx g, rcx b
-	push	rax
-	push	rbx
-	push	rcx
-	push	r8 ; char
-	push	r9 ; red
-	push	r10 ; green
-	push	r11 ; blue
 	push	r12
 	push	r13
+	push	r14
+	push	r15
 	push	rbp
 	mov	rbp, rsp
 	
-	mov	r8, rdi
-	mov	r9, rsi
-	mov	r10, rdx
-	mov	r11, rcx
- 
+	mov	r12, rdi
+	mov	r13, rsi
+	mov	r14, rdx
+	mov	r15, rcx
+
+	;Prints the ANSI escape sequence for a 24-bit color code
+	;the R, G, and B values are embedded as ASCII inside the code
+
 	mov	rsi, 07h
 	lea	rdi, [.ansicode1]
 	call	.printstr
 
-	mov	rdi, r9 ; red
+	mov	rdi, r13 ; red
 	call	.printnum	
 	
 	mov	rsi, 1
 	lea	rdi, [.ansicode34]
 	call	.printstr
 
-	mov	rdi, r10 ; green
+	mov	rdi, r14 ; green
 	call	.printnum
 	
 	mov	rsi, 1
 	lea	rdi, [.ansicode34]
 	call	.printstr
 
-	mov	rdi, r11 ; blue 
+	mov	rdi, r15 ; blue 
 	call	.printnum
 	
 	mov	rsi, 1
 	lea	rdi, [.ansicode5]
 	call	.printstr
 
-	mov	rdi, r8
+	mov	rdi, r12
 	call	.printchar
 	mov	rsp, rbp
 	pop	rbp
+	pop	r15
+	pop	r14
 	pop	r13
 	pop	r12
-	pop	r11
-	pop	r10
-	pop	r9
-	pop	r8
-	pop	rcx
-	pop	rbx
-	pop	rax
 	ret
 
 .printnum: ; rdi num
-	push	r11
-	push	rax
-	push	rsi
-	push	rbx
 	push	rbp
 	mov	rbp, rsp
 	sub	rsp, 32
@@ -194,13 +182,8 @@ _start:
 
 	mov	rsp, rbp
 	pop	rbp
-	pop	rbx
-	pop	rsi
-	pop	rax
-	pop	r11
 	ret
 .printchar:; rdi	char
-	push	rsi
 	push	rbp
 	mov	rbp, rsp
 	sub	rsp, 8
@@ -212,12 +195,8 @@ _start:
 
 	mov	rsp, rbp
 	pop	rbp
-	pop	rsi
 	ret
 .printstr: ; rdi str, rsi len
-	push	r11
-	push	rdx
-	push	rax
 	push	rbp
 	mov	rbp, rsp
 	
@@ -229,36 +208,27 @@ _start:
 
 	mov	rsp, rbp
 	pop	rbp
-	pop	rax
-	pop	rdx	
-	pop	r11
 	ret
 .printnl:
-	push 	rdi
-	push	rdx
-	push	rsi
 	push	rbp
 	mov	rbp, rsp
 	sub	rsp, 8
 
-	mov rax, 1
-	mov rdi, 1
-	mov rdx, 1
-	mov [rbp - 8], byte 0ah
-	lea rsi, [rbp - 8]
+	mov 	rax, 1
+	mov 	rdi, 1
+	mov 	rdx, 1
+	mov 	[rbp - 8], byte 0ah
+	lea 	rsi, [rbp - 8]
 	syscall
 	mov	rsp, rbp
 	pop	rbp
-	pop	rsi	
-	pop	rdx
-	pop	rdi
 	ret	
 .flmod:
 	movaps	xmm2, xmm0
 	divss	xmm2, xmm1
-	cvttss2si	eax, xmm2
+	cvttss2si	ecx, xmm2
 	pxor	xmm2, xmm2
-	cvtsi2ss	xmm2, eax
+	cvtsi2ss	xmm2, ecx
 	mulss	xmm1, xmm2
 	subss	xmm0, xmm1
 	ret
@@ -268,13 +238,13 @@ _start:
 	movd	xmm1, eax
 	call	.flmod
 	
-	mov	eax, 40800000h
-	movd	xmm1, eax
+	mov	edx, 40800000h
+	movd	xmm1, edx
 	movaps	xmm2, xmm0		
 
 	subss	xmm1, xmm0
-	mov	eax, 3f800000h
-	movd	xmm0, eax
+	mov	edi, 3f800000h
+	movd	xmm0, edi
 	
 	comiss	xmm1, xmm2
 	jbe	._label1
@@ -283,8 +253,8 @@ _start:
 ._label3:
 	minss	xmm2, xmm0
 	subss	xmm0, xmm2
-	mov	eax, 437f0000h
-	movd	xmm3, eax
+	mov	esi, 437f0000h
+	movd	xmm3, esi
 	mulss	xmm0, xmm3
 	ret
 ._label1:
@@ -314,6 +284,7 @@ _start:
 	mov	[rbp - 1ch], edi ; max_steps_local, max_steps
 	mov	[rbp - 20h], esi ;step_local, step
 
+
 	pxor	xmm0, xmm0
 	cvtsi2ss	xmm0, [rbp - 20h]
 
@@ -323,13 +294,14 @@ _start:
 	movaps	xmm1, xmm0
 	divss	xmm1, xmm2
 
-	mov	eax, 43b40000h
+	mov	eax, 43b40000h	; 360.f
 	movd	xmm0, eax
 
 	mulss	xmm0, xmm1
 	movss	[rbp - 14h], xmm0 ; angle
-	mov	eax, 42700000h
-	movd	xmm1, eax
+	
+	mov	edi, 42700000h	; 60.f
+	movd	xmm1, edi
 
 	divss	xmm0, xmm1
 	movss	[rbp - 10h], xmm0 ; h
@@ -337,11 +309,12 @@ _start:
 
 	movss	xmm0, [rbp - 10h]
 	movaps	xmm1, xmm0
-	mov	eax, 40a00000h
 
-	movd	xmm0, eax
+	mov	esi, 40a00000h	; 5.f
+	movd	xmm0, esi
 	call	.hsvf
 
+	
 	cvttss2si	eax, xmm0
 	movzx	eax, al
 
@@ -350,11 +323,10 @@ _start:
 	movss	xmm0, [rbp - 10h]
 	
 	movaps	xmm1, xmm0
-	mov	eax, 40400000h
+	mov	eax, 40400000h	; 3.f
 	
 	movd	xmm0, eax
 	call	.hsvf
-	
 	cvttss2si	eax, xmm0
 	movzx	eax, al
 	
@@ -377,10 +349,7 @@ _start:
 	ret
 
 .itoa:;	ret rax, num edi, rsi poutbuf
-	push	rcx
-	push	rdx
 	push	rbx
-	push	rdi
 
 	mov	ebx, 10
 	mov	eax, edi ;eax is now the number
@@ -399,10 +368,7 @@ _start:
 	mov	rax, rsi
 	add	rax, 1h
 	
-	pop	rdi
 	pop	rbx
-	pop	rdx
-	pop	rcx
 	ret
 ; 5ch 78h 31h 62h 5Bh 33h 38h 3Bh 32h 3Bh _ 3Bh _ 3Bh _ 6dh
 .ansicode1: db 1bh, 5bh, 33h, 38h, 3bh, 32h, 3bh
