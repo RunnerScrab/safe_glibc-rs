@@ -1,4 +1,5 @@
 safeglibc
 sc.bin
+win.bin
 *.o
-
+*.exe
