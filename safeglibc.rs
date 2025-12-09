@@ -14,9 +14,8 @@
 /// which have an encoded 4 byte offset. You pass a sequence of bytes in
 /// or near a function that calls the function you're looking for,
 /// adjusting with offset_from_needle as necessary. A bit fragile
-fn safely_get_fnaddrval_from_got(needle: &[u8], offset_from_needle: usize) -> usize {
-    let mainaddr = transmute::<fn() -> (), usize>(main);
-    let mem = transmute::<usize, &[u8; u32::MAX as usize]>(mainaddr);
+fn safely_get_fnaddrval_from_got(startaddr : usize, needle: &[u8], offset_from_needle: usize) -> usize {
+    let mem = transmute::<usize, &[u8; u32::MAX as usize]>(startaddr);
 
     if let Some(position) = mem
         .windows(needle.len())
@@ -28,7 +27,7 @@ fn safely_get_fnaddrval_from_got(needle: &[u8], offset_from_needle: usize) -> us
 		let signed_offset : i32 = *offsetslice;
 
         //The 4-byte offset encoded in the CALL opcode is relative to the next instruction's address
-        let next_op_addr: usize = mainaddr + plt_offset_offset + 4;
+        let next_op_addr: usize = startaddr + plt_offset_offset + 4;
         let call_addr_operand_addr: usize = (signed_offset as i64 + next_op_addr as i64) as usize;
         let got_entry_addr = transmute::<usize, &[u8; 8]>(call_addr_operand_addr);
         let target_be: usize = usize::from_le_bytes(*got_entry_addr);
@@ -50,7 +49,20 @@ struct LinuxLibs {
     pdl_iterate_phdr: usize,
 }
 
+#[allow(unused)]
+struct MapEntry {
+	address_start: usize,
+	address_end: usize,
+	permissions: String,
+	offset: usize,
+	device_inode: String,
+	pathname: String,
+}
+
 impl LinuxLibs {
+	
+
+		
     fn malloc(&self, size: usize) -> usize {
         let tmpmalloc = transmute::<usize, fn(usize) -> usize>(self.pmalloc);
         tmpmalloc(size)
@@ -93,7 +105,31 @@ impl LinuxLibs {
     }
 
     fn initialize(&mut self) {
+		
 		LinuxLibs::check_elf_header();
+
+		let mainaddr = transmute::<fn()->(), usize>(main);
+		
+		let path = std::env::current_exe().unwrap();
+		let procmap_entries_opt = LinuxLibs::parse_procmap();
+		
+		if procmap_entries_opt.is_none()
+		{
+			println!("Couldn't parse procmap entries. That's ok; we don't use them.");
+		}
+		else
+		{
+			let map_entries = procmap_entries_opt.unwrap();
+			let progentries : Vec<&MapEntry> = map_entries.iter().filter(
+				|entry| { entry.pathname == path }
+			).collect();
+			
+			assert!(progentries.len() > 0, "Found no entries for program in proc map");
+			let progaddrstart = progentries[0].address_start;
+			let progaddrend = progentries[progentries.len() - 1].address_end;
+			println!("Program start: 0x{:x} End: 0x{:x}", progaddrstart, progaddrend);
+			println!("Main addr: 0x{:x}", mainaddr);
+		}
 		
         use std::hint::black_box;
         let memset_stub = black_box(&[0x4c, 0x89, 0xf7, 0x31, 0xf6, 0x48, 0x89, 0xda, 0xff, 0x15]);
@@ -114,26 +150,74 @@ impl LinuxLibs {
             0x4d, 0x89, 0x7e, 0x18, 0x4d, 0x89, 0x66, 0x20, 0x49, 0x89, 0x5e, 0x28,
         ]);
 
-        self.pmemset = safely_get_fnaddrval_from_got(memset_stub, 0);
-        self.pmalloc = safely_get_fnaddrval_from_got(malloc_stub, 0);
-        self.pfree = safely_get_fnaddrval_from_got(free_stub, 0x9);
-        self.pmemcpy = safely_get_fnaddrval_from_got(memcpy_stub, 0);
-        self.pmmap64 = safely_get_fnaddrval_from_got(mmap64_stub, 0);
-        self.pmunmap = safely_get_fnaddrval_from_got(munmap_stub, 0);
-        self.psyscall = safely_get_fnaddrval_from_got(syscall_stub, 0); //syscall is variadic
-        self.pdl_iterate_phdr = safely_get_fnaddrval_from_got(dl_iterate_phdr_stub, 12);
+        self.pmemset = safely_get_fnaddrval_from_got(mainaddr, memset_stub, 0);
+        self.pmalloc = safely_get_fnaddrval_from_got(mainaddr, malloc_stub, 0);
+        self.pfree = safely_get_fnaddrval_from_got(mainaddr, free_stub, 0x9);
+        self.pmemcpy = safely_get_fnaddrval_from_got(mainaddr, memcpy_stub, 0);
+        self.pmmap64 = safely_get_fnaddrval_from_got(mainaddr, mmap64_stub, 0);
+        self.pmunmap = safely_get_fnaddrval_from_got(mainaddr, munmap_stub, 0);
+        self.psyscall = safely_get_fnaddrval_from_got(mainaddr, syscall_stub, 0); //syscall is variadic
+        self.pdl_iterate_phdr = safely_get_fnaddrval_from_got(mainaddr, dl_iterate_phdr_stub, 12);
     }
+
+	fn parse_procmap() -> Option<Vec<MapEntry>>
+	{
+	    use std::io::prelude::*;	    
+        let mut hprocmap = std::fs::File::open("/proc/self/maps").unwrap();
+        let mut procmapstr : String = String::new();
+        
+		let _ = hprocmap.read_to_string(&mut procmapstr);
+        
+		let mut map_entries : Vec<MapEntry> = Vec::new();
+		
+        for line in procmapstr.lines()
+        {
+			let columns: Vec<&str> = line.split_whitespace().collect();
+			
+			// The line format must have at least 5 columns to be valid
+			assert!(columns.len() >= 5, "Unexpected procmap row");
+
+			// Parse the address range
+			let (start_str, end_str) = columns[0].split_once('-')
+				.expect("Address range format invalid");
+
+			let address_start = usize::from_str_radix(start_str, 16).unwrap();
+			let address_end = usize::from_str_radix(end_str, 16).unwrap();
+			let offset = usize::from_str_radix(columns[2], 16).unwrap();
+
+			// Handle optional pathname (column index 5)
+			let pathname = columns.get(5).unwrap_or(&"[anonymous]").to_string();
+
+			map_entries.push(
+			MapEntry {
+				address_start,
+				address_end,
+				permissions: columns[1].to_string(),
+				offset,
+				device_inode: columns[3].to_string(),
+				pathname,
+			});
+		}
+        
+		Some(map_entries)
+	}
 
     fn check_elf_header()
     {
-		let path = std::env::current_exe().unwrap();
-		let binbytes = std::fs::read(path).unwrap();
-		
-		assert_eq!(&binbytes[0..4], &[0x7f, 0x45, 0x4c, 0x46],
-			"This is not an ELF binary and the program will not work.");
-		println!("Found ELF header.");
-		print_byte_sequence(&binbytes[0..4]);
-	}
+        let path = std::env::current_exe().unwrap();
+        let binbytes = std::fs::read(&path).unwrap();
+        
+        assert_eq!(&binbytes[0..4], &[0x7f, 0x45, 0x4c, 0x46],
+                "This is not an ELF binary and the program will not work.");
+        assert_eq!(*&binbytes[5], 1,
+                "This program has an unexpected ELF File Class");
+        assert_eq!(*&binbytes[6], 1,
+                "This program has been compiled in big-endian mode somehow.\
+                 This program will not work.");
+        
+        println!("Found ELF header.");
+        print_byte_sequence(&binbytes[0..4]);
+    }
     
     fn build_linuxlibs() -> LinuxLibs
     {
@@ -283,6 +367,10 @@ fn main() {
         if munmap_result < 0 {
             println!("munmap() failed");
         }
+        else
+        {
+			println!("munmap() succeeded.");
+		}
     }
 }
 
