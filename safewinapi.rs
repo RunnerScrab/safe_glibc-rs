@@ -24,11 +24,8 @@ fn safely_get_fnaddr_from_iat(needle: &[u8], offset_from_needle: usize) -> usize
     {
         let iat_offset_offset: usize = offset_from_needle + position + needle.len();
 
-        let offsetslice = &mem[iat_offset_offset..iat_offset_offset + 4];
-        let signed_offset: i32 = (offsetslice[0] as i32)
-            | (offsetslice[1] as i32) << (1 << 3)
-            | (offsetslice[2] as i32) << (2 << 3)
-            | (offsetslice[3] as i32) << (3 << 3);
+        let offsetslice = transmute::<&[u8], &i32>(&mem[iat_offset_offset..iat_offset_offset + 4]);
+        let signed_offset : i32 = *offsetslice;
 
         //The 4-byte offset encoded in the CALL opcode is relative to the next instruction's address
         let next_op_addr: usize = mainaddr + iat_offset_offset + 4;
